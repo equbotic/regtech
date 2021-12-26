@@ -31,12 +31,12 @@ case class RfAll  (rfId :Idnt, addon: Nomi, hedgeTyp: RfHdgT, assetTyp: RfAssT) 
 /** --------------------------------------------------------------------
  *  traits for the derivates c*/
 //fields used in calcSACCR - summarize PostionValue over HedgingSets
-trait Derivat1 { def marketValue: Nomi; def addon: Nomi }
-trait Derivat2 { def marketValue: Nomi; def addon: Nomi; def riskFacts: Seq[Rf2] }
-trait Derivat3 { def marketValue: Nomi; def addon: Nomi; def riskFacts: Seq[Rf3] }
+//trait Derivat1 { def marketValue: Nomi; def addon: Nomi }
+trait DerivatHdg { def marketValue: Nomi; def addon: Nomi; def riskFacts: Seq[Rf2] }
+trait Derivat3   { def marketValue: Nomi; def addon: Nomi; def riskFacts: Seq[Rf3] }
 
-case class DerivatHedge(derivId :Idnt, marketValue: Nomi, addon: Nomi, riskFacts: Seq[Rf2]) extends Derivat1
-case class DerivatSACCR(derivId :Idnt, marketValue: Nomi, addon: Nomi)                      extends Derivat1
+case class DerivatHedge(derivId :Idnt, marketValue: Nomi, addon: Nomi, riskFacts: Seq[Rf2]) extends DerivatHdg
+//case class DerivatSACCR(derivId :Idnt, marketValue: Nomi, addon: Nomi)                      extends Derivat1
 
 /** --------------------------------------------------------------------
  *  SACCR c*/
@@ -69,7 +69,7 @@ object saccr {
   }
   /** --------------------------------------------------------------------
    * get the Hedgingsets with the riskfaktors of the derivats */
-  def getHedgingSets(derivats: Seq[Derivat2]
+  def getHedgingSets(derivats: Seq[DerivatHdg]
                     ) = {
     val rfAll  = derivats.map (_.riskFacts).flatten
     val hdgSet = rfAll.groupBy(_.hedgeTyp)
@@ -108,13 +108,13 @@ object saccr {
 
   /** --------------------------------------------------------------------
    *  get the EAD Value for netted Derivats */
-  def calcSACCRunmargined(
-                           derivats        : Seq[Derivat1], //for the netting set
-                           hedgingSets     : Seq[Seq[Rf1]],
+  def calcSACCRunmargined( derivats        : Seq[Derivat1Hdg], //for the netting set
                            NICA            : Nomi           //net independent collateral amount calculated only for transactions that are included in netting set
                          ) = {
-    val CMV        = derivats.map(_.marketValue).sum               //the current market value
-    val sumAddon   = hedgingSets.map(_.map(_.addon).sum).sum  //summe der addons ueber hedgingsets
+    val CMV        = derivats.map(_.marketValue).sum                //the current market value
+
+    val hedgeSets  = getHedgingSets(derivats)     //: Seq[Seq[Rf1]]
+    val sumAddon   = hedgeSets.map(_.map(_.addon).sum).sum          //summe der addons ueber hedgingsets
 
     val zz         = CMV - NICA
     val multiplier = calcMultiplier(sumAddon, zz)
@@ -127,9 +127,7 @@ object saccr {
   }
   /** --------------------------------------------------------------------
    *  get the EAD Value for netted Derivats */
-  def calcSACCRmargined(
-                         derivats        : Seq[Derivat1], //for the netting set
-                         hedgingSets     : Seq[Seq[Rf1]],
+  def calcSACCRmargined( derivats        : Seq[DerivatHdg], //for the netting set
                          NICA            : Nomi,          //net independent collateral amount calculated only for transactions that are included in netting set
                          VM              : Nomi,          //variation margin in margined netting set
                          TH              : Nomi,
@@ -137,7 +135,9 @@ object saccr {
                          //  marginSchwelle  : Nomi           //if defined, then margined with this schwelle
                        ) = {
     val CMV        = derivats.map(_.marketValue).sum          //the current market value
-    val sumAddon   = hedgingSets.map(_.map(_.addon).sum).sum  //summe der addons ueber hedgingsets
+
+    val hedgeSets  = getHedgingSets(derivats)     //: Seq[Seq[Rf1]]
+    val sumAddon   = hedgeSets.map(_.map(_.addon).sum).sum  //summe der addons ueber hedgingsets
 
     val zz         = CMV - VM - NICA
     val multiplier = calcMultiplier(sumAddon, zz)
