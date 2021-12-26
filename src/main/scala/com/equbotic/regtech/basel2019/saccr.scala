@@ -21,19 +21,19 @@ type RfHdgT = Int       //Riskfaktor-HedgeType (hedge + crr1) ?
 
 /** --------------------------------------------------------------------
  *  traits for the riskfaktors */
-trait Rf1 { def addon: Nomi }
-trait Rf2 { def addon: Nomi; def hedgeTyp: RfHdgT; def assetTyp: RfAssT}
-trait Rf3 { def addon: Nomi; def hedgeTyp: RfHdgT; def assetTyp: RfAssT; def toUse :Boolean}
+//trait Rf1 { def addon: Nomi }
+trait Rf2 { def addon: Nomi; def assetTyp: RfAssT; def hedgeTyp: RfHdgT}
+//trait Rf3 { def addon: Nomi; def hedgeTyp: RfHdgT; def assetTyp: RfAssT; def toUse :Boolean}
 
-case class RfAddon(rfId :Idnt, addon: Nomi) extends Rf1
-case class RfHedge(rfId :Idnt, addon: Nomi, hedgeTyp: RfHdgT, assetTyp: RfAssT) extends Rf2 with Rf1
-case class RfAll  (rfId :Idnt, addon: Nomi, hedgeTyp: RfHdgT, assetTyp: RfAssT) extends Rf2 with Rf1
+//case class RfAddon(rfId :Idnt, addon: Nomi) extends Rf1
+case class RfHdg(rfId :Idnt, addon: Nomi, assetTyp: RfAssT, hedgeTyp: RfHdgT) extends Rf2 //with Rf1
+//case class RfAll  (rfId :Idnt, addon: Nomi, hedgeTyp: RfHdgT, assetTyp: RfAssT) extends Rf2 //with Rf1
 /** --------------------------------------------------------------------
  *  traits for the derivates c*/
 //fields used in calcSACCR - summarize PostionValue over HedgingSets
 //trait Derivat1 { def marketValue: Nomi; def addon: Nomi }
 trait DerivatHdg { def marketValue: Nomi; def addon: Nomi; def riskFacts: Seq[Rf2] }
-trait Derivat3   { def marketValue: Nomi; def addon: Nomi; def riskFacts: Seq[Rf3] }
+//trait Derivat3   { def marketValue: Nomi; def addon: Nomi; def riskFacts: Seq[Rf3] }
 
 case class DerivatHedge(derivId :Idnt, marketValue: Nomi, addon: Nomi, riskFacts: Seq[Rf2]) extends DerivatHdg
 //case class DerivatSACCR(derivId :Idnt, marketValue: Nomi, addon: Nomi)                      extends Derivat1
@@ -41,15 +41,15 @@ case class DerivatHedge(derivId :Idnt, marketValue: Nomi, addon: Nomi, riskFacts
 /** --------------------------------------------------------------------
  *  SACCR c*/
 object saccr {
-  def MAX3(d1 :Double, d2 :Double, d3 :Double) = d1.max(d2).max(d3)
-  def MAX (d1 :Double, d2 :Double)             = d1.max(d2)
+  def MAX3(d1 :Double, d2 :Double, d3 :Double) :Double = d1.max(d2).max(d3)
+  def MAX (d1 :Double, d2 :Double)             :Double = d1.max(d2)
 
-  def MIN (d1 :Double, d2 :Double)             = d1.min(d2)
+  def MIN (d1 :Double, d2 :Double)             :Double = d1.min(d2)
 
   /** --------------------------------------------------------------------
-   */
+   */ /*
   def relevRfs (rfs :Seq[Rf3]
-               ) = {
+               ): Seq[Rf3] = {
     //rfs.sortWith((rf1, rf2) => rf1.assetTyp < rf2.assetTyp &&  rf1.addon > rf2.addon)
 
     val rfGrp = rfs.groupBy(_.assetTyp).values.map(_.maxBy(_.addon))//.maxBy(_.addon)  //.sortWith(_ > _)
@@ -59,19 +59,19 @@ object saccr {
 
     val rfOut = rf1 ++ rf2 //rfs.map(_.toUse)
     rfOut
-  }
+  } */
   /** --------------------------------------------------------------------
-   */
+   */ /*
   def findRelevRf (derivats: Seq[Derivat3]
-                  ) = {
+                  ): Seq[Seq[Rf3]] = {
     val derivs = derivats.map(rfSet => relevRfs(rfSet.riskFacts) )
     derivs
-  }
+  } */
   /** --------------------------------------------------------------------
    * get the Hedgingsets with the riskfaktors of the derivats */
   def getHedgingSets(derivats: Seq[DerivatHdg]
-                    ) = {
-    val rfAll  = derivats.map (_.riskFacts).flatten
+                    ): Map[RfHdgT, Seq[Rf2]] = {
+    val rfAll  = derivats.flatMap(_.riskFacts)
     val hdgSet = rfAll.groupBy(_.hedgeTyp)
     hdgSet
   }
@@ -79,42 +79,42 @@ object saccr {
    * multiplier for PFE ; article 278 */
   def calcMultiplier (sumAddon :Nomi,
                       zz       :Nomi
-                     ) = {
+                     ): Double = {
     val floor = 0.05
     val yy    = 2.0 * (1 - floor) * sumAddon
 
-    if (zz < 0 && yy != 0)  MIN (1.0, (floor + (1.0 - floor) * math.exp(zz / yy)) )
+    if (zz < 0 && yy != 0)  MIN (1.0, floor + (1.0 - floor) * math.exp(zz / yy) )
     else  1.0
   }
   /** --------------------------------------------------------------------
    * calcPotentialFutureExposur = multiplier * sumAddOn ; article 278 */
-  def calcPotentialFutureExposure(multiplier :Quot, sumAddon :Nomi) =
+  def calcPotentialFutureExposure(multiplier :Quot, sumAddon :Nomi): Double =
     multiplier * sumAddon
 
   /** --------------------------------------------------------------------
    * calcReplacementCostUnmargined = max(CMV - NICA, 0) ; article 275 */
-  def calcReplacementCostUnmargined(CMV :Nomi, NICA :Nomi) =
+  def calcReplacementCostUnmargined(CMV :Nomi, NICA :Nomi): Double =
     MAX(CMV - NICA, 0.0)
 
   /** --------------------------------------------------------------------
    * calcReplacementCostMargined = RC = max(CMV - VM - NICA, TH + MTA - NICA, 0) ; article 275 */
-  def calcReplacementCostMargined(CMV :Nomi, NICA :Nomi, VM :Nomi, TH :Nomi, MTA :Nomi) =
+  def calcReplacementCostMargined(CMV :Nomi, NICA :Nomi, VM :Nomi, TH :Nomi, MTA :Nomi): Double =
     MAX3(CMV - VM - NICA, TH + MTA - NICA, 0.0)
 
   /** --------------------------------------------------------------------
    * calcExposureValue = a · (RC + PFE) ; *a=1.4 *; article 274 */
-  def calcExposureValue(RC :Nomi, PFE :Nomi) =
+  def calcExposureValue(RC :Nomi, PFE :Nomi): Double =
     1.4 * RC * PFE   //replacementCost - potentialFutureExposure
 
   /** --------------------------------------------------------------------
    *  get the EAD Value for netted Derivats */
-  def calcSACCRunmargined( derivats        : Seq[Derivat1Hdg], //for the netting set
+  def calcSACCRunmargined( derivats        : Seq[DerivatHdg], //for the netting set
                            NICA            : Nomi           //net independent collateral amount calculated only for transactions that are included in netting set
-                         ) = {
+                         ): Double = {
     val CMV        = derivats.map(_.marketValue).sum                //the current market value
 
     val hedgeSets  = getHedgingSets(derivats)     //: Seq[Seq[Rf1]]
-    val sumAddon   = hedgeSets.map(_.map(_.addon).sum).sum          //summe der addons ueber hedgingsets
+    val sumAddon   = hedgeSets.map(_._2.map(_.addon).sum).sum       //summe der addons ueber hedgingsets
 
     val zz         = CMV - NICA
     val multiplier = calcMultiplier(sumAddon, zz)
@@ -130,14 +130,14 @@ object saccr {
   def calcSACCRmargined( derivats        : Seq[DerivatHdg], //for the netting set
                          NICA            : Nomi,          //net independent collateral amount calculated only for transactions that are included in netting set
                          VM              : Nomi,          //variation margin in margined netting set
-                         TH              : Nomi,
-                         MTA             : Nomi
+                         TH              : Nomi,          //margin threshold
+                         MTA             : Nomi           //minimum transfer amount
                          //  marginSchwelle  : Nomi           //if defined, then margined with this schwelle
-                       ) = {
+                       ): Double = {
     val CMV        = derivats.map(_.marketValue).sum          //the current market value
 
     val hedgeSets  = getHedgingSets(derivats)     //: Seq[Seq[Rf1]]
-    val sumAddon   = hedgeSets.map(_.map(_.addon).sum).sum  //summe der addons ueber hedgingsets
+    val sumAddon   = hedgeSets.map(_._2.map(_.addon).sum).sum       //summe der addons ueber hedgingsets
 
     val zz         = CMV - VM - NICA
     val multiplier = calcMultiplier(sumAddon, zz)
