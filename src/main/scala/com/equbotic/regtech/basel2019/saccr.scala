@@ -19,6 +19,12 @@ type Idnt   = Long      //Identification
 type RfAssT = Int       //Riskfaktor-AssetType
 type RfHdgT = Int       //Riskfaktor-HedgeType (hedge + crr1) ?
 
+val IRD :RfAssT = 1  //Interest rate derivatives
+val FXD :RfAssT = 2  //Foreign exchange derivatives
+val CRD :RfAssT = 3  //Credit derivatives
+val EQD :RfAssT = 4  //Equity derivatives
+val CMD :RfAssT = 5  //Commodity derivatives
+
 /** --------------------------------------------------------------------
  *  traits for the riskfaktors */
 //trait Rf1 { def addon: Nomi }
@@ -108,7 +114,7 @@ object saccr {
 
   /** --------------------------------------------------------------------
    *  get the EAD Value for netted Derivats */
-  def calcSACCRunmargined( derivats        : Seq[DerivatHdg], //for the netting set
+  def calcSaccrUnmargined( derivats        : Seq[DerivatHdg], //for the netting set
                            NICA            : Nomi           //net independent collateral amount calculated only for transactions that are included in netting set
                          ): Double = {
     val CMV        = derivats.map(_.marketValue).sum                //the current market value
@@ -127,7 +133,7 @@ object saccr {
   }
   /** --------------------------------------------------------------------
    *  get the EAD Value for netted Derivats */
-  def calcSACCRmargined( derivats        : Seq[DerivatHdg], //for the netting set
+  def calcSaccrMargined( derivats        : Seq[DerivatHdg], //for the netting set
                          NICA            : Nomi,          //net independent collateral amount calculated only for transactions that are included in netting set
                          VM              : Nomi,          //variation margin in margined netting set
                          TH              : Nomi,          //margin threshold
@@ -159,5 +165,7 @@ VM    = the volatility-adjusted value of the net variation margin received or po
 TH    = the margin threshold applicable to the netting set under the margin agreement below which the institution cannot call for collateral; and
 MTA   = the minimum transfer amount applicable to the netting set under the margin agreement.
 
+CSA  Credit Support Annex (1 of 4 parts of ISDA Master Agreement, not mandatory)
 OGA Organismus für gemeinsame Anlagen -> in Wertpapieren (OGAW)
-CIU collective investment undertakings -> undertaking for collective investment in transferable securities (UCITS) */
+CIU collective investment undertakings -> undertaking for collective investment in transferable securities (UCITS)
+*/
