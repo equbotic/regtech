@@ -12,8 +12,11 @@ package com.equbotic.regtech.basel2019
  *  The standardised approach for measuring counterparty credit risk exposures
  */
 
-type Nomi   = Double    //Nominal
-type Quot   = Double    //Quote
+type Nomi   = Double    //Nominal Positiv
+type Quot   = Double    //Quote   Positiv
+type Numb   = Double    //Double  Positiv
+type Dbl    = Double
+type Any1   = Int       //-1 , +1
 type Idnt   = Long      //Identification
 //rfId = derivatId + lfn (rf pro derivat)
 type RfAssT = Int       //Riskfaktor-AssetType
@@ -24,55 +27,63 @@ val FXD :RfAssT = 2  //Foreign exchange derivatives
 val CRD :RfAssT = 3  //Credit derivatives
 val EQD :RfAssT = 4  //Equity derivatives
 val CMD :RfAssT = 5  //Commodity derivatives
+val OTD :RfAssT = 6  //Other derivatives
 
 /** --------------------------------------------------------------------
  *  traits for the riskfaktors */
-//trait Rf1 { def addon: Nomi }
 trait Rf2 { def addon: Nomi; def assetTyp: RfAssT; def hedgeTyp: RfHdgT}
-//trait Rf3 { def addon: Nomi; def hedgeTyp: RfHdgT; def assetTyp: RfAssT; def toUse :Boolean}
-
-//case class RfAddon(rfId :Idnt, addon: Nomi) extends Rf1
 case class RfHdg(rfId :Idnt, addon: Nomi, assetTyp: RfAssT, hedgeTyp: RfHdgT) extends Rf2 //with Rf1
-//case class RfAll  (rfId :Idnt, addon: Nomi, hedgeTyp: RfHdgT, assetTyp: RfAssT) extends Rf2 //with Rf1
+
 /** --------------------------------------------------------------------
  *  traits for the derivates c*/
 //fields used in calcSACCR - summarize PostionValue over HedgingSets
-//trait Derivat1 { def marketValue: Nomi; def addon: Nomi }
 trait DerivatHdg { def marketValue: Nomi; def addon: Nomi; def riskFacts: Seq[Rf2] }
-//trait Derivat3   { def marketValue: Nomi; def addon: Nomi; def riskFacts: Seq[Rf3] }
-
 case class DerivatHedge(derivId :Idnt, marketValue: Nomi, addon: Nomi, riskFacts: Seq[Rf2]) extends DerivatHdg
-//case class DerivatSACCR(derivId :Idnt, marketValue: Nomi, addon: Nomi)                      extends Derivat1
+
+case class DerivatOption(derivId :Idnt, currentPrice: Quot, units :Numb, buysell :Any1, putcall :Any1,
+                         yrsToStart :Quot, yrsToEnd :Quot, yrsToExpi :Quot) extends DerivatHdg
+{
+  val marketValue :Nomi    = currentPrice * units
+
+  val effectiveNotional = {//D = d * MF * δ  = adjusted notional (d) * maturity factor (MF) * supervisory delta (δ)
+    val adjustedNotional = marketValue
+    val sign             = buysell * putcall
+    val supervisoryDelta = 1.0  //vola as param + blackScholes
+    1000.0
+  }
+
+  val addon      :Nomi     = 1000
+  val riskFacts  :Seq[Rf2] = Seq(RfHdg(101, 123, 1, 1000000))
+
+}
+
+case class DerivatOther (derivId :Idnt, currentPrice: Quot, units :Numb, buysell :Any1,
+                         yrsToStart :Quot, yrsToEnd :Quot, yrsToExpi :Quot) extends DerivatHdg
+{{
+  val marketValue :Nomi    = currentPrice * units
+
+  val effectiveNotional = {//D = d * MF * δ  = adjusted notional (d) * maturity factor (MF) * supervisory delta (δ)
+    val adjustedNotional = marketValue
+    val sign             = buysell
+
+    val supervisoryDelta = 1.0
+    1000.0
+  }
+
+  val addon      :Nomi     = 1000
+  val riskFacts  :Seq[Rf2] = Seq(RfHdg(101, 123, 1, 1000000))
+
+}
 
 /** --------------------------------------------------------------------
  *  SACCR c*/
 object saccr {
   def MAX3(d1 :Double, d2 :Double, d3 :Double) :Double = d1.max(d2).max(d3)
   def MAX (d1 :Double, d2 :Double)             :Double = d1.max(d2)
-
   def MIN (d1 :Double, d2 :Double)             :Double = d1.min(d2)
 
-  /** --------------------------------------------------------------------
-   */ /*
-  def relevRfs (rfs :Seq[Rf3]
-               ): Seq[Rf3] = {
-    //rfs.sortWith((rf1, rf2) => rf1.assetTyp < rf2.assetTyp &&  rf1.addon > rf2.addon)
-
-    val rfGrp = rfs.groupBy(_.assetTyp).values.map(_.maxBy(_.addon))//.maxBy(_.addon)  //.sortWith(_ > _)
-
-    val rf1 = rfs  .filter(_.hedgeTyp == 123)  //caps/floor
-    val rf2 = rfGrp.filter(_.hedgeTyp != 123)
-
-    val rfOut = rf1 ++ rf2 //rfs.map(_.toUse)
-    rfOut
-  } */
-  /** --------------------------------------------------------------------
-   */ /*
-  def findRelevRf (derivats: Seq[Derivat3]
-                  ): Seq[Seq[Rf3]] = {
-    val derivs = derivats.map(rfSet => relevRfs(rfSet.riskFacts) )
-    derivs
-  } */
+  // #####################################################################
+  // #####################################################################
   /** --------------------------------------------------------------------
    * get the Hedgingsets with the riskfaktors of the derivats */
   def getHedgingSets(derivats: Seq[DerivatHdg]
