@@ -2,6 +2,8 @@ package com.equbotic.regtech.basel2019
 
 /** SACCR
  *  https://www.bis.org/basel_framework/chapter/CRE/52.htm
+ *  CRE - Calculation of RWA for credit risk
+ *  CRE52 - Standardised approach to counterparty credit risk
  *  The Standardised Approach for Counterparty Credit Risk (SA-CCR)
  *
  *  http://data.europa.eu/eli/reg/2019/876/oj
@@ -22,6 +24,7 @@ type Idnt   = Long      //Identification
 type RfAssT = Int       //Riskfaktor-AssetType
 type RfHdgT = Int       //Riskfaktor-HedgeType (hedge + crr1) ?
 
+/** CRE 52.24 */
 val IRD :RfAssT = 1  //Interest rate derivatives
 val FXD :RfAssT = 2  //Foreign exchange derivatives
 val CRD :RfAssT = 3  //Credit derivatives
@@ -31,14 +34,17 @@ val OTD :RfAssT = 6  //Other derivatives
 
 /** --------------------------------------------------------------------
  *  traits for the riskfaktors */
-trait Rf2 { def addon: Nomi; def assetTyp: RfAssT; def hedgeTyp: RfHdgT}
-case class RfHdg(rfId :Idnt, addon: Nomi, assetTyp: RfAssT, hedgeTyp: RfHdgT) extends Rf2 //with Rf1
+trait      Rf   {           def addOn: Nomi; def assetTyp: RfAssT; def hedgeTyp: RfHdgT}
+case class RfHdg(rfId :Idnt,    addOn: Nomi,     assetTyp: RfAssT,     hedgeTyp: RfHdgT) extends Rf //(>>no deeper traits: with Rf1)
 
 /** --------------------------------------------------------------------
  *  traits for the derivates c*/
 //fields used in calcSACCR - summarize PostionValue over HedgingSets
-trait DerivatHdg { def marketValue: Nomi; def addon: Nomi; def riskFacts: Seq[Rf2] }
-case class DerivatHedge(derivId :Idnt, marketValue: Nomi, addon: Nomi, riskFacts: Seq[Rf2]) extends DerivatHdg
+//trait      DerivatHdg  {               def marketValue: Nomi; def addOn: Nomi; def riskFacts: Seq[Rf] }
+//case class DerivatHedge(derivId :Idnt,     marketValue: Nomi,     addOn: Nomi,     riskFacts: Seq[Rf]) extends DerivatHdg
+
+trait      DerivatHdg  {               def marketValue: Nomi; def riskFacts: Seq[Rf] }
+case class DerivatHedge(derivId :Idnt,     marketValue: Nomi,     riskFacts: Seq[Rf]) extends DerivatHdg
 
 case class DerivatOption(derivId :Idnt, currentPrice: Quot, units :Numb, buysell :Any1, putcall :Any1,
                          yrsToStart :Quot, yrsToEnd :Quot, yrsToExpi :Quot) extends DerivatHdg
@@ -52,14 +58,14 @@ case class DerivatOption(derivId :Idnt, currentPrice: Quot, units :Numb, buysell
     1000.0
   }
 
-  val addon      :Nomi     = 1000
-  val riskFacts  :Seq[Rf2] = Seq(RfHdg(101, 123, 1, 1000000))
+//val addOn      :Nomi     = 1000
+  val riskFacts  :Seq[Rf] = Seq(RfHdg(101, 123, 1, 1000000))
 
 }
 
 case class DerivatOther (derivId :Idnt, currentPrice: Quot, units :Numb, buysell :Any1,
                          yrsToStart :Quot, yrsToEnd :Quot, yrsToExpi :Quot) extends DerivatHdg
-{{
+{
   val marketValue :Nomi    = currentPrice * units
 
   val effectiveNotional = {//D = d * MF * δ  = adjusted notional (d) * maturity factor (MF) * supervisory delta (δ)
@@ -70,8 +76,8 @@ case class DerivatOther (derivId :Idnt, currentPrice: Quot, units :Numb, buysell
     1000.0
   }
 
-  val addon      :Nomi     = 1000
-  val riskFacts  :Seq[Rf2] = Seq(RfHdg(101, 123, 1, 1000000))
+//val addOn      :Nomi     = 1000
+  val riskFacts  :Seq[Rf] = Seq(RfHdg(101, 123, 1, 1000000))
 
 }
 
@@ -83,63 +89,76 @@ object saccr {
   def MIN (d1 :Double, d2 :Double)             :Double = d1.min(d2)
 
   // #####################################################################
-  // #####################################################################
-  /** --------------------------------------------------------------------
-   * get the Hedgingsets with the riskfaktors of the derivats */
-  def getHedgingSets(derivats: Seq[DerivatHdg]
-                    ): Map[RfHdgT, Seq[Rf2]] = {
-    val rfAll  = derivats.flatMap(_.riskFacts)
-    val hdgSet = rfAll.groupBy(_.hedgeTyp)
-    hdgSet
-  }
-  /** --------------------------------------------------------------------
-   * multiplier for PFE ; article 278 */
-  def calcMultiplier (sumAddon :Nomi,
-                      zz       :Nomi
-                     ): Double = {
-    val floor = 0.05
-    val yy    = 2.0 * (1 - floor) * sumAddon
+  /** CRE 52.1  / article 274 --------------------------------------------------------------------
+   * calcExposureValue = a · (RC + PFE) ; a=1.4 */
+  def calcExposureValue(RC :Nomi, PFE :Nomi): Nomi =
+    1.4 * (RC + PFE)   //alpha * ( replacementCost + potentialFutureExposure)
 
-    if (zz < 0 && yy != 0)  MIN (1.0, floor + (1.0 - floor) * math.exp(zz / yy) )
+  /** CRE 52.10 / article 275 --------------------------------------------------------------------
+   * calcReplacementCostUnmargined = max(CMV - NICA, 0) */
+  def calcReplacementCostUnmargined(CMV :Nomi, NICA :Nomi): Nomi =
+    MAX(CMV - NICA, 0.0)    // currentMarketValue (V) - netIndependentCollateralAmount (C)
+
+  /** CRE 52.18 / article 275 --------------------------------------------------------------------
+   * calcReplacementCostMargined = RC = max(CMV - VM - NICA, TH + MTA - NICA, 0) */
+  def calcReplacementCostMargined(CMV :Nomi, NICA :Nomi, VM :Nomi, TH :Nomi, MTA :Nomi): Nomi =
+    MAX3(CMV - (NICA + VM), TH + MTA - NICA, 0.0) // currentMarketValue (V) - (netIndependentCollateralAmount + variationMargin) (C)
+                                                       // marginTHreshold + minimumTransferAmount - netIndependentCollateralAmount
+
+  /** CRE 52.20 / article 278 --------------------------------------------------------------------
+   * calcPotentialFutureExposure = multiplier * sumAddOn */
+  def calcPotentialFutureExposure(multiplier :Quot, sumAddOn :Nomi): Nomi =
+    multiplier * sumAddOn
+
+  /** CRE 52.23 / article 278 --------------------------------------------------------------------
+   * multiplier for PotentialFutureExposure */
+  def calcMultiplier (sumAddOn :Nomi,
+                      haircutValue  :Nomi  //(C) unmargined: CMV - NICA / margined: CMV - (NICA + VM)
+                     ): Quot =
+  {
+    val floor = 0.05
+    val denominator = 2.0 * (1 - floor) * sumAddOn
+
+    if (haircutValue < 0 && denominator != 0)  MIN (1.0, floor + (1.0 - floor) * math.exp(haircutValue / denominator) )
     else  1.0
   }
-  /** --------------------------------------------------------------------
-   * calcPotentialFutureExposur = multiplier * sumAddOn ; article 278 */
-  def calcPotentialFutureExposure(multiplier :Quot, sumAddon :Nomi): Double =
-    multiplier * sumAddon
+
+  /** CRE 52.24 --------------------------------------------------------------------
+   * get the Hedgingsets with the riskfaktors of the derivats */
+  def getHedgingSets(derivats: Seq[DerivatHdg]  ): Map[RfHdgT, Seq[Rf]] =
+  {
+    val rfAll              :Seq[Rf]  = derivats.flatMap(_.riskFacts)  //flatmap all Riskfactors of derivats
+    val hdgSet :Map[RfHdgT, Seq[Rf]] = rfAll.groupBy(_.hedgeTyp)      //group the riskfactors by hedgeTyp
+    hdgSet
+  }
+  /** CRE 52.25 --------------------------------------------------------------------
+   * get the Hedgingsets with the riskfaktors of the derivats */
+  def calcAddOnAggregate(hedgeSets: Map[RfHdgT, Seq[Rf]] ) : Nomi =
+  {
+    val addOnAgg :Nomi = hedgeSets.map(                    //for every hedgeSet
+                                 _._2.map( _.addOn ).sum   //build the sum of addOns
+                                ).sum                      //the sum of the hedgeSets addOn
+    addOnAgg
+  }
 
   /** --------------------------------------------------------------------
-   * calcReplacementCostUnmargined = max(CMV - NICA, 0) ; article 275 */
-  def calcReplacementCostUnmargined(CMV :Nomi, NICA :Nomi): Double =
-    MAX(CMV - NICA, 0.0)
+  *  get the EAD Value for a set of unmargined netted Derivats */
+  def calcSaccrUnmargined( derivats        : Seq[DerivatHdg], //the derivats with riscfactors of the unmargined netting set
+                           NICA            : Nomi             //net independent collateral amount calculated only for transactions that are included in the netting set
+                         ): Nomi =                            //the exposure (ead) of the netting set
+  {
+    val CMV           :Nomi = derivats.map(_.marketValue).sum             //the currentMarketValue of the netting set = sum of marketvalues of the netting set derivates
 
-  /** --------------------------------------------------------------------
-   * calcReplacementCostMargined = RC = max(CMV - VM - NICA, TH + MTA - NICA, 0) ; article 275 */
-  def calcReplacementCostMargined(CMV :Nomi, NICA :Nomi, VM :Nomi, TH :Nomi, MTA :Nomi): Double =
-    MAX3(CMV - VM - NICA, TH + MTA - NICA, 0.0)
+    val hedgeSets     :Map[RfHdgT, Seq[Rf]] = getHedgingSets(derivats)   //Build Map of HedgingSets
+    val addOnAgg      :Nomi = calcAddOnAggregate(hedgeSets)              //summe der addOns ueber hedgingsets
 
-  /** --------------------------------------------------------------------
-   * calcExposureValue = a · (RC + PFE) ; *a=1.4 *; article 274 */
-  def calcExposureValue(RC :Nomi, PFE :Nomi): Double =
-    1.4 * RC * PFE   //replacementCost - potentialFutureExposure
+    val haircutValue  :Nomi = CMV - NICA                                 //currentMarketValue (V) - netIndependentCollateralAmount (C)
+    val multiplier    :Quot = calcMultiplier(addOnAgg, haircutValue)
+    val PFE           :Nomi = calcPotentialFutureExposure(multiplier, addOnAgg)
 
-  /** --------------------------------------------------------------------
-   *  get the EAD Value for netted Derivats */
-  def calcSaccrUnmargined( derivats        : Seq[DerivatHdg], //for the netting set
-                           NICA            : Nomi           //net independent collateral amount calculated only for transactions that are included in netting set
-                         ): Double = {
-    val CMV        = derivats.map(_.marketValue).sum                //the current market value
+    val RC            :Nomi = calcReplacementCostUnmargined  (CMV, NICA)
 
-    val hedgeSets  = getHedgingSets(derivats)     //: Seq[Seq[Rf1]]
-    val sumAddon   = hedgeSets.map(_._2.map(_.addon).sum).sum       //summe der addons ueber hedgingsets
-
-    val zz         = CMV - NICA
-    val multiplier = calcMultiplier(sumAddon, zz)
-    val PFE        = calcPotentialFutureExposure(multiplier, sumAddon)
-
-    val RC         = calcReplacementCostUnmargined  (CMV, NICA)
-
-    val exposureValue = calcExposureValue(RC, PFE)
+    val exposureValue :Nomi = calcExposureValue(RC, PFE)
     exposureValue  //exposure value of a netting set
   }
   /** --------------------------------------------------------------------
@@ -150,19 +169,20 @@ object saccr {
                          TH              : Nomi,          //margin threshold
                          MTA             : Nomi           //minimum transfer amount
                          //  marginSchwelle  : Nomi           //if defined, then margined with this schwelle
-                       ): Double = {
-    val CMV        = derivats.map(_.marketValue).sum          //the current market value
+                       ): Nomi =
+  {
+    val CMV           :Nomi = derivats.map(_.marketValue).sum          //the current market value as sum of all derivats
 
-    val hedgeSets  = getHedgingSets(derivats)     //: Seq[Seq[Rf1]]
-    val sumAddon   = hedgeSets.map(_._2.map(_.addon).sum).sum       //summe der addons ueber hedgingsets
+    val hedgeSets     :Map[RfHdgT, Seq[Rf]] = getHedgingSets(derivats) //Build Map of HedgingSets
+    val addOnAgg      :Nomi = calcAddOnAggregate(hedgeSets)            //summe der addOns ueber hedgingsets
 
-    val zz         = CMV - VM - NICA
-    val multiplier = calcMultiplier(sumAddon, zz)
-    val PFE        = calcPotentialFutureExposure(multiplier, sumAddon)
+    val haircutValue  :Nomi = CMV - (NICA + VM)                        //currentMarketValue (V) - (netIndependentCollateralAmount + variationMargin) (C)
+    val multiplier    :Quot = calcMultiplier(addOnAgg, haircutValue)
+    val PFE           :Nomi = calcPotentialFutureExposure(multiplier, addOnAgg)
 
-    val RC         = calcReplacementCostMargined  (CMV, NICA, VM, TH, MTA)
+    val RC            :Nomi = calcReplacementCostMargined  (CMV, NICA, VM, TH, MTA)
 
-    val exposureValue = calcExposureValue(RC, PFE)
+    val exposureValue :Nomi = calcExposureValue(RC, PFE)
     exposureValue                                         //exposure value of a netting set
   }
 
