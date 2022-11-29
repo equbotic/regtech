@@ -1,3 +1,6 @@
+.scala-build/
+*.semanticdb
+
 # bloop and metals
 .bloop
 .bsp
